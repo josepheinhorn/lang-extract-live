@@ -1,0 +1,1438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LangExtract-Live | Ingestion Engine</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap');
+
+  :root {
+    --cyan: #00f0ff;
+    --cyan-dim: #00f0ff44;
+    --cyan-glow: #00f0ff88;
+    --cyan-deep: #006e7a;
+    --magenta: #ff00aa;
+    --magenta-dim: #ff00aa33;
+    --green: #00ff88;
+    --amber: #ffaa00;
+    --bg-0: #04080c;
+    --bg-1: #0a1018;
+    --bg-2: #101820;
+    --bg-3: #182028;
+    --bg-4: #202830;
+    --border: #1a2a35;
+    --border-active: #00f0ff55;
+    --text: #c0d8e8;
+    --text-dim: #607888;
+    --text-bright: #e8f4ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg-0);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 240, 255, 0.008) 2px,
+      rgba(0, 240, 255, 0.008) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      linear-gradient(90deg, rgba(0,240,255,0.02) 1px, transparent 1px),
+      linear-gradient(rgba(0,240,255,0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app-wrapper {
+    position: relative;
+    z-index: 1;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 24px 0 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+    position: relative;
+  }
+
+  .header::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    width: 200px;
+    height: 1px;
+    background: linear-gradient(90deg, var(--cyan), transparent);
+  }
+
+  .librarian-avatar {
+    width: 64px;
+    height: 64px;
+    image-rendering: pixelated;
+    flex-shrink: 0;
+    border: 2px solid var(--cyan-dim);
+    border-radius: 4px;
+    background: var(--bg-2);
+    padding: 2px;
+    position: relative;
+  }
+
+  .librarian-avatar::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border: 1px solid var(--cyan-dim);
+    border-radius: 6px;
+    animation: avatar-pulse 3s ease-in-out infinite;
+  }
+
+  @keyframes avatar-pulse {
+    0%, 100% { border-color: var(--cyan-dim); }
+    50% { border-color: var(--cyan-glow); }
+  }
+
+  .header-text h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 800;
+    font-size: 22px;
+    letter-spacing: 3px;
+    background: linear-gradient(135deg, var(--cyan), #00ff88, var(--cyan));
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 4s linear infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 0% center; }
+    100% { background-position: 200% center; }
+  }
+
+  .header-text .subtitle {
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  .status-badge {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--green);
+    background: rgba(0,255,136,0.06);
+    padding: 6px 14px;
+    border: 1px solid rgba(0,255,136,0.2);
+    border-radius: 3px;
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: blink 2s ease-in-out infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── INPUT SECTION ── */
+  .input-section {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 24px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .input-section::before {
+    content: '// URL_INPUT_MODULE';
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-size: 9px;
+    color: var(--text-dim);
+    opacity: 0.4;
+    letter-spacing: 1px;
+  }
+
+  .input-label {
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--cyan);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .input-label::before {
+    content: '▸';
+    color: var(--cyan);
+  }
+
+  .input-row {
+    display: flex;
+    gap: 10px;
+  }
+
+  .url-input {
+    flex: 1;
+    background: var(--bg-0);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 16px;
+    color: var(--text-bright);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    transition: all 0.3s ease;
+  }
+
+  .url-input:focus {
+    border-color: var(--cyan);
+    box-shadow: 0 0 0 3px var(--cyan-dim), inset 0 0 20px rgba(0,240,255,0.03);
+  }
+
+  .url-input::placeholder {
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  .extract-btn {
+    background: linear-gradient(135deg, var(--cyan-deep), #004850);
+    color: var(--cyan);
+    border: 1px solid var(--cyan-dim);
+    padding: 14px 28px;
+    border-radius: 4px;
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    position: relative;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .extract-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #008a9a, #005a65);
+    box-shadow: 0 0 20px var(--cyan-dim), 0 0 40px rgba(0,240,255,0.1);
+    border-color: var(--cyan);
+    transform: translateY(-1px);
+  }
+
+  .extract-btn:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .extract-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .extract-btn::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(
+      transparent,
+      rgba(0, 240, 255, 0.05),
+      transparent
+    );
+    transform: rotate(45deg);
+    animation: btn-sweep 3s linear infinite;
+  }
+
+  @keyframes btn-sweep {
+    0% { transform: translateX(-100%) rotate(45deg); }
+    100% { transform: translateX(100%) rotate(45deg); }
+  }
+
+  .helper-text {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .helper-text code {
+    background: var(--bg-3);
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: var(--amber);
+    font-size: 10px;
+  }
+
+  /* ── PROGRESS BAR ── */
+  .progress-container {
+    margin-bottom: 20px;
+    display: none;
+  }
+
+  .progress-container.active {
+    display: block;
+  }
+
+  .progress-bar-track {
+    height: 3px;
+    background: var(--bg-3);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--cyan), var(--green));
+    border-radius: 2px;
+    transition: width 0.4s ease;
+    box-shadow: 0 0 10px var(--cyan-dim);
+  }
+
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+  }
+
+  .progress-phase {
+    color: var(--cyan);
+  }
+
+  /* ── LOG CONSOLE ── */
+  .log-console {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 20px;
+    overflow: hidden;
+    display: none;
+  }
+
+  .log-console.active {
+    display: block;
+  }
+
+  .log-header {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+  }
+
+  .log-header-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .log-header-dot.r { background: #ff5f56; }
+  .log-header-dot.y { background: #ffbd2e; }
+  .log-header-dot.g { background: #27c93f; }
+
+  .log-header-title {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin-left: 8px;
+    text-transform: uppercase;
+  }
+
+  .log-body {
+    padding: 14px 16px;
+    max-height: 180px;
+    overflow-y: auto;
+    font-size: 11px;
+    line-height: 1.8;
+  }
+
+  .log-body::-webkit-scrollbar { width: 4px; }
+  .log-body::-webkit-scrollbar-track { background: var(--bg-0); }
+  .log-body::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 2px; }
+
+  .log-line {
+    opacity: 0;
+    animation: logFade 0.3s ease forwards;
+  }
+
+  @keyframes logFade {
+    to { opacity: 1; }
+  }
+
+  .log-ts { color: var(--text-dim); }
+  .log-info { color: var(--cyan); }
+  .log-success { color: var(--green); }
+  .log-warn { color: var(--amber); }
+  .log-error { color: var(--magenta); }
+
+  /* ── RESULTS PANELS ── */
+  .results-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  @media (max-width: 800px) {
+    .results-grid { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel-full {
+    grid-column: 1 / -1;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: var(--cyan);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    background: var(--bg-0);
+    padding: 2px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+  }
+
+  .panel-body {
+    padding: 16px;
+    flex: 1;
+    overflow-y: auto;
+    max-height: 400px;
+  }
+
+  .panel-body::-webkit-scrollbar { width: 4px; }
+  .panel-body::-webkit-scrollbar-track { background: var(--bg-0); }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 2px; }
+
+  /* Extracted items */
+  .extracted-item {
+    background: var(--bg-0);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--cyan);
+    border-radius: 4px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    transition: border-color 0.2s;
+  }
+
+  .extracted-item:hover {
+    border-left-color: var(--green);
+    border-color: var(--border-active);
+  }
+
+  .extracted-item:last-child { margin-bottom: 0; }
+
+  .item-name {
+    font-weight: 600;
+    color: var(--green);
+    font-size: 13px;
+    margin-bottom: 4px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .item-desc {
+    font-size: 11px;
+    color: var(--text);
+    line-height: 1.5;
+    margin-bottom: 6px;
+  }
+
+  .item-example {
+    font-size: 10px;
+    color: var(--amber);
+    background: var(--bg-2);
+    padding: 6px 10px;
+    border-radius: 3px;
+    border: 1px solid rgba(255,170,0,0.1);
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .item-tag {
+    display: inline-block;
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 2px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-right: 4px;
+    margin-bottom: 4px;
+  }
+
+  .tag-function { background: rgba(0,240,255,0.1); color: var(--cyan); border: 1px solid var(--cyan-dim); }
+  .tag-class { background: rgba(255,0,170,0.1); color: var(--magenta); border: 1px solid var(--magenta-dim); }
+  .tag-export { background: rgba(0,255,136,0.1); color: var(--green); border: 1px solid rgba(0,255,136,0.2); }
+  .tag-endpoint { background: rgba(255,170,0,0.1); color: var(--amber); border: 1px solid rgba(255,170,0,0.2); }
+
+  /* JSON output */
+  .json-output {
+    background: var(--bg-0);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 16px;
+    font-size: 11px;
+    line-height: 1.7;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--text);
+    tab-size: 2;
+  }
+
+  .json-key { color: var(--cyan); }
+  .json-string { color: var(--green); }
+  .json-number { color: var(--amber); }
+  .json-bool { color: var(--magenta); }
+  .json-null { color: var(--text-dim); }
+  .json-brace { color: var(--text-dim); }
+
+  /* Copy button */
+  .copy-btn {
+    background: var(--bg-0);
+    color: var(--cyan);
+    border: 1px solid var(--border);
+    padding: 6px 14px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+
+  .copy-btn:hover {
+    border-color: var(--cyan);
+    background: rgba(0,240,255,0.05);
+  }
+
+  .copy-btn.copied {
+    color: var(--green);
+    border-color: var(--green);
+  }
+
+  /* Format selector */
+  .format-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 12px;
+  }
+
+  .format-tab {
+    background: var(--bg-0);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    padding: 8px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+
+  .format-tab:first-child { border-radius: 4px 0 0 4px; }
+  .format-tab:last-child { border-radius: 0 4px 4px 0; }
+  .format-tab:not(:last-child) { border-right: none; }
+
+  .format-tab.active {
+    background: var(--cyan-deep);
+    color: var(--cyan);
+    border-color: var(--cyan-dim);
+  }
+
+  .format-tab:hover:not(.active) {
+    color: var(--text);
+    background: var(--bg-2);
+  }
+
+  /* Stats bar */
+  .stats-bar {
+    display: flex;
+    gap: 16px;
+    padding: 14px 20px;
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  .stat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .stat-value {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--cyan);
+  }
+
+  .stat-label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .stat-divider {
+    width: 1px;
+    height: 24px;
+    background: var(--border);
+  }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+  }
+
+  .empty-state-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.3;
+  }
+
+  .empty-state-text {
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    line-height: 1.8;
+  }
+
+  .empty-state-text strong {
+    color: var(--cyan);
+    font-weight: 500;
+  }
+
+  /* Loading animation */
+  .loading-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--cyan-dim);
+    border-top-color: var(--cyan);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Pixel art canvas */
+  .pixel-art-container {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 8px;
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 24px 0;
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    border-top: 1px solid var(--border);
+    margin-top: 20px;
+  }
+
+  .footer span { color: var(--cyan); }
+
+  /* Tab underline animation */
+  @keyframes tabGlow {
+    0%, 100% { box-shadow: 0 1px 0 var(--cyan); }
+    50% { box-shadow: 0 1px 8px var(--cyan-dim); }
+  }
+
+  .format-tab.active {
+    animation: tabGlow 2s ease-in-out infinite;
+  }
+
+  /* Scroll reveal */
+  .reveal {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: reveal 0.5s ease forwards;
+  }
+
+  @keyframes reveal {
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="app-wrapper" id="app"></div>
+
+<script>
+// ── PIXEL ART LIBRARIAN ──
+function createLibrarianSVG(size = 64) {
+  // 16x16 pixel art "AI Librarian" character
+  const pixels = [
+    '................',
+    '....00cccc00....',
+    '...0cccccccc0...',
+    '..0cc11cc11cc0..',
+    '..0cc1fcc1fcc0..',
+    '..0cccccccccc0..',
+    '..0cc0cccc0cc0..',
+    '...0cc0000cc0...',
+    '....00cccc00....',
+    '...0aaccccaa0...',
+    '..0aaaccccaaa0..',
+    '..0a0aaccaa0a0..',
+    '..0a00acca00a0..',
+    '...0..0aa0..0...',
+    '......0..0......',
+    '......0..0......',
+  ];
+  const colorMap = {
+    '0': '#0a1018',
+    'c': '#00f0ff',
+    '1': '#182028',
+    'f': '#00ff88',
+    'a': '#006e7a',
+    '.': 'transparent'
+  };
+  const scale = size / 16;
+  let svgPixels = '';
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const char = pixels[y][x];
+      if (char !== '.') {
+        svgPixels += `<rect x="${x * scale}" y="${y * scale}" width="${scale}" height="${scale}" fill="${colorMap[char]}" />`;
+      }
+    }
+  }
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg" style="image-rendering:pixelated">${svgPixels}</svg>`;
+}
+
+// ── EXTRACTION ENGINE ──
+class ExtractionEngine {
+  constructor() {
+    this.patterns = {
+      // JS/TS function patterns
+      jsFunctions: [
+        /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)\s*(?::\s*\w+[<>\[\],\s]*)?/gm,
+        /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\(([^)]*)\)\s*=>/gm,
+        /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?function\s*\(([^)]*)\)/gm,
+      ],
+      // Python function patterns
+      pyFunctions: [
+        /def\s+(\w+)\s*\(([^)]*)\)\s*(?:->\s*[\w\[\], ]+)?\s*:/gm,
+        /async\s+def\s+(\w+)\s*\(([^)]*)\)\s*(?:->\s*[\w\[\], ]+)?\s*:/gm,
+      ],
+      // Class patterns
+      classes: [
+        /class\s+(\w+)(?:\s+extends\s+\w+)?(?:\s*\([^)]*\))?\s*[:{]/gm,
+        /class\s+(\w+)(?:\s*\([^)]*\))?\s*:/gm,
+      ],
+      // Export patterns
+      exports: [
+        /export\s+(?:default\s+)?(?:class|function|const|let|var|interface|type|enum)\s+(\w+)/gm,
+        /module\.exports\s*=\s*(?:\{[^}]*\}|(\w+))/gm,
+      ],
+      // API endpoint patterns
+      endpoints: [
+        /(?:app|router)\.(get|post|put|patch|delete)\s*\(\s*['"`]([^'"`]+)['"`]/gm,
+        /@(?:app|router)\.(?:route|get|post|put|patch|delete)\s*\(\s*['"`]([^'"`]+)['"`]/gm,
+      ],
+      // JSDoc / docstring patterns
+      jsdoc: /\/\*\*\s*\n([\s\S]*?)\*\//gm,
+      pyDocstring: /(?:def\s+\w+[^:]*:\s*\n\s*)("""[\s\S]*?"""|'''[\s\S]*?''')/gm,
+      // Markdown headings for doc files
+      mdHeadings: /^#{1,3}\s+(.+)$/gm,
+      // Code blocks in markdown
+      mdCodeBlocks: /```[\w]*\n([\s\S]*?)```/gm,
+    };
+  }
+
+  extract(content, filename = '') {
+    const results = {
+      functions: [],
+      classes: [],
+      exports: [],
+      endpoints: [],
+      metadata: { filename, lines: content.split('\n').length, chars: content.length }
+    };
+
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    const isMarkdown = ext === 'md' || ext === 'mdx';
+    const isPython = ext === 'py';
+    const isJS = ['js', 'ts', 'jsx', 'tsx', 'mjs'].includes(ext);
+
+    // Extract JSDoc comments map
+    const docComments = this._extractDocComments(content);
+
+    // Functions
+    const fnPatterns = isPython ? this.patterns.pyFunctions :
+                       isJS ? this.patterns.jsFunctions :
+                       [...this.patterns.jsFunctions, ...this.patterns.pyFunctions];
+
+    for (const pat of fnPatterns) {
+      pat.lastIndex = 0;
+      let m;
+      while ((m = pat.exec(content)) !== null) {
+        const name = m[1];
+        const params = m[2] || '';
+        if (name.startsWith('_') && !name.startsWith('__')) continue; // skip private
+        const desc = this._findDescription(content, m.index, docComments);
+        const example = this._findExample(content, name);
+        results.functions.push({
+          name,
+          params: this._parseParams(params),
+          description: desc,
+          example: example,
+          line: content.substring(0, m.index).split('\n').length,
+          type: 'function'
+        });
+      }
+    }
+
+    // Classes
+    for (const pat of this.patterns.classes) {
+      pat.lastIndex = 0;
+      let m;
+      while ((m = pat.exec(content)) !== null) {
+        const name = m[1];
+        const desc = this._findDescription(content, m.index, docComments);
+        results.classes.push({ name, description: desc, line: content.substring(0, m.index).split('\n').length, type: 'class' });
+      }
+    }
+
+    // Exports
+    for (const pat of this.patterns.exports) {
+      pat.lastIndex = 0;
+      let m;
+      while ((m = pat.exec(content)) !== null) {
+        const name = m[1];
+        if (name) results.exports.push({ name, line: content.substring(0, m.index).split('\n').length, type: 'export' });
+      }
+    }
+
+    // Endpoints
+    for (const pat of this.patterns.endpoints) {
+      pat.lastIndex = 0;
+      let m;
+      while ((m = pat.exec(content)) !== null) {
+        const method = m[1]?.toUpperCase() || 'ROUTE';
+        const path = m[2] || m[1];
+        results.endpoints.push({ method, path, line: content.substring(0, m.index).split('\n').length, type: 'endpoint' });
+      }
+    }
+
+    // If markdown, also extract structured sections
+    if (isMarkdown) {
+      const mdItems = this._extractMarkdown(content);
+      results.functions.push(...mdItems.functions);
+    }
+
+    // Deduplicate
+    results.functions = this._dedupe(results.functions, 'name');
+    results.classes = this._dedupe(results.classes, 'name');
+    results.exports = this._dedupe(results.exports, 'name');
+
+    return results;
+  }
+
+  _extractDocComments(content) {
+    const map = new Map();
+    // JSDoc
+    const jsdocRe = /\/\*\*\s*\n([\s\S]*?)\*\//gm;
+    let m;
+    while ((m = jsdocRe.exec(content)) !== null) {
+      const endPos = m.index + m[0].length;
+      const clean = m[1].replace(/^\s*\*\s?/gm, '').trim();
+      map.set(endPos, clean);
+    }
+    // Python docstrings handled inline
+    return map;
+  }
+
+  _findDescription(content, funcIndex, docComments) {
+    // Check for JSDoc just before function
+    for (const [endPos, doc] of docComments) {
+      const between = content.substring(endPos, funcIndex).trim();
+      if (between.length < 50) {
+        const firstLine = doc.split('\n')[0].replace(/@\w+.*/, '').trim();
+        return firstLine || doc.substring(0, 120);
+      }
+    }
+    // Check for inline comment above
+    const before = content.substring(Math.max(0, funcIndex - 200), funcIndex);
+    const lines = before.split('\n').reverse();
+    for (const line of lines.slice(0, 3)) {
+      const comment = line.match(/(?:\/\/|#)\s*(.+)/);
+      if (comment) return comment[1].trim();
+    }
+    // Check for Python docstring after
+    const after = content.substring(funcIndex, funcIndex + 500);
+    const pyDoc = after.match(/:\s*\n\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)''')/);
+    if (pyDoc) {
+      const doc = (pyDoc[1] || pyDoc[2]).trim();
+      return doc.split('\n')[0];
+    }
+    return 'No description available';
+  }
+
+  _findExample(content, funcName) {
+    // Look for usage examples
+    const usageRe = new RegExp(`(?:${funcName}\\s*\\([^)]*\\))`, 'g');
+    const matches = [];
+    let m;
+    while ((m = usageRe.exec(content)) !== null) {
+      matches.push(m[0]);
+    }
+    if (matches.length > 1) return matches[1]; // skip definition, use first usage
+    if (matches.length === 1) return matches[0];
+    return `${funcName}()`;
+  }
+
+  _parseParams(paramsStr) {
+    if (!paramsStr.trim()) return [];
+    return paramsStr.split(',').map(p => {
+      const clean = p.trim().replace(/\s*=.*/, '').replace(/:\s*\w+.*/, '').replace(/^self,?\s*/, '');
+      return clean;
+    }).filter(p => p && p !== 'self' && p !== 'cls');
+  }
+
+  _extractMarkdown(content) {
+    const functions = [];
+    // Look for function/method descriptions in markdown
+    const codeRe = /```[\w]*\n([\s\S]*?)```/gm;
+    let m;
+    while ((m = codeRe.exec(content)) !== null) {
+      const block = m[1];
+      const fnMatch = block.match(/(?:function|def|const|let)\s+(\w+)/);
+      if (fnMatch) {
+        // Find description from surrounding text
+        const before = content.substring(Math.max(0, m.index - 300), m.index);
+        const descMatch = before.split('\n').reverse().find(l => l.trim() && !l.startsWith('#') && !l.startsWith('```'));
+        functions.push({
+          name: fnMatch[1],
+          params: [],
+          description: descMatch?.trim() || 'Documented in markdown',
+          example: block.trim().substring(0, 120),
+          line: content.substring(0, m.index).split('\n').length,
+          type: 'function'
+        });
+      }
+    }
+    return { functions };
+  }
+
+  _dedupe(arr, key) {
+    const seen = new Set();
+    return arr.filter(item => {
+      if (seen.has(item[key])) return false;
+      seen.add(item[key]);
+      return true;
+    });
+  }
+}
+
+// ── SCHEMA GENERATOR ──
+class SchemaGenerator {
+  static toOpenAITools(extractionResult) {
+    const tools = [];
+    for (const fn of extractionResult.functions) {
+      const properties = {};
+      const required = [];
+      for (const p of fn.params) {
+        properties[p] = { type: 'string', description: `Parameter: ${p}` };
+        required.push(p);
+      }
+      tools.push({
+        type: 'function',
+        function: {
+          name: fn.name,
+          description: fn.description,
+          parameters: {
+            type: 'object',
+            properties,
+            required
+          }
+        }
+      });
+    }
+    return tools;
+  }
+
+  static toAnthropicTools(extractionResult) {
+    const tools = [];
+    for (const fn of extractionResult.functions) {
+      const properties = {};
+      const required = [];
+      for (const p of fn.params) {
+        properties[p] = { type: 'string', description: `Parameter: ${p}` };
+        required.push(p);
+      }
+      tools.push({
+        name: fn.name,
+        description: fn.description,
+        input_schema: {
+          type: 'object',
+          properties,
+          required
+        }
+      });
+    }
+    return tools;
+  }
+
+  static toAgentManifest(extractionResult) {
+    return {
+      manifest_version: '1.0',
+      generated_at: new Date().toISOString(),
+      source: extractionResult.metadata.filename,
+      stats: {
+        functions: extractionResult.functions.length,
+        classes: extractionResult.classes.length,
+        exports: extractionResult.exports.length,
+        endpoints: extractionResult.endpoints.length,
+        total_lines: extractionResult.metadata.lines
+      },
+      tools: this.toOpenAITools(extractionResult),
+      anthropic_tools: this.toAnthropicTools(extractionResult),
+      classes: extractionResult.classes.map(c => ({ name: c.name, description: c.description })),
+      endpoints: extractionResult.endpoints.map(e => ({ method: e.method, path: e.path })),
+      raw_exports: extractionResult.exports.map(e => e.name)
+    };
+  }
+}
+
+// ── SYNTAX HIGHLIGHTER ──
+function highlightJSON(json) {
+  const str = typeof json === 'string' ? json : JSON.stringify(json, null, 2);
+  return str
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"([^"]+)"(?=\s*:)/g, '<span class="json-key">"$1"</span>')
+    .replace(/:\s*"([^"]*)"/g, ': <span class="json-string">"$1"</span>')
+    .replace(/:\s*(\d+\.?\d*)/g, ': <span class="json-number">$1</span>')
+    .replace(/:\s*(true|false)/g, ': <span class="json-bool">$1</span>')
+    .replace(/:\s*(null)/g, ': <span class="json-null">$1</span>')
+    .replace(/([{}\[\]])/g, '<span class="json-brace">$1</span>');
+}
+
+// ── APP STATE ──
+const state = {
+  url: '',
+  loading: false,
+  progress: 0,
+  phase: '',
+  logs: [],
+  results: null,
+  schema: null,
+  format: 'manifest', // manifest | openai | anthropic
+  error: null
+};
+
+function addLog(msg, type = 'info') {
+  const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
+  state.logs.push({ ts, msg, type });
+  render();
+  // Auto-scroll log
+  setTimeout(() => {
+    const logBody = document.querySelector('.log-body');
+    if (logBody) logBody.scrollTop = logBody.scrollHeight;
+  }, 50);
+}
+
+function setProgress(pct, phase) {
+  state.progress = pct;
+  state.phase = phase;
+  render();
+}
+
+// ── FETCH & EXTRACT ──
+async function handleExtract() {
+  let url = state.url.trim();
+  if (!url) return;
+
+  // Convert GitHub URLs to raw
+  if (url.includes('github.com') && !url.includes('raw.githubusercontent.com')) {
+    url = url
+      .replace('github.com', 'raw.githubusercontent.com')
+      .replace('/blob/', '/');
+    addLog(`Converted to raw URL: ${url.substring(0, 60)}...`, 'info');
+  }
+
+  state.loading = true;
+  state.logs = [];
+  state.results = null;
+  state.schema = null;
+  state.error = null;
+  render();
+
+  addLog('Initiating extraction sequence...', 'info');
+  setProgress(10, 'CONNECTING');
+
+  try {
+    addLog(`Fetching: ${url.substring(0, 70)}...`, 'info');
+    setProgress(25, 'FETCHING');
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+    const content = await response.text();
+    const filename = url.split('/').pop() || 'unknown';
+    addLog(`Received ${content.length.toLocaleString()} chars (${filename})`, 'success');
+    setProgress(50, 'PARSING');
+
+    // Extraction
+    addLog('Running extraction engine...', 'info');
+    const engine = new ExtractionEngine();
+    const results = engine.extract(content, filename);
+    state.results = results;
+    setProgress(75, 'EXTRACTING');
+
+    const total = results.functions.length + results.classes.length + results.exports.length + results.endpoints.length;
+    addLog(`Found ${results.functions.length} functions, ${results.classes.length} classes, ${results.exports.length} exports, ${results.endpoints.length} endpoints`, 'success');
+
+    // Schema generation
+    addLog('Generating agent-ready schema...', 'info');
+    setProgress(90, 'GENERATING SCHEMA');
+
+    state.schema = {
+      manifest: SchemaGenerator.toAgentManifest(results),
+      openai: SchemaGenerator.toOpenAITools(results),
+      anthropic: SchemaGenerator.toAnthropicTools(results),
+    };
+
+    setProgress(100, 'COMPLETE');
+    addLog(`Schema generated: ${total} extractable items → Agent manifest ready`, 'success');
+
+    if (total === 0) {
+      addLog('Warning: No extractable patterns found. Try a file with functions, classes, or API endpoints.', 'warn');
+    }
+
+  } catch (err) {
+    state.error = err.message;
+    addLog(`Error: ${err.message}`, 'error');
+    if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+      addLog('CORS blocked. Use raw.githubusercontent.com URLs or a CORS proxy.', 'warn');
+    }
+    setProgress(0, 'ERROR');
+  }
+
+  state.loading = false;
+  render();
+}
+
+function copySchema() {
+  if (!state.schema) return;
+  const data = state.format === 'manifest' ? state.schema.manifest :
+               state.format === 'openai' ? state.schema.openai :
+               state.schema.anthropic;
+  navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+  const btn = document.querySelector('.copy-schema-btn');
+  if (btn) {
+    btn.classList.add('copied');
+    btn.textContent = '✓ Copied';
+    setTimeout(() => { btn.classList.remove('copied'); btn.textContent = 'Copy as Tool-Definition'; }, 2000);
+  }
+}
+
+// ── RENDER ──
+function render() {
+  const app = document.getElementById('app');
+  const librarianSVG = createLibrarianSVG(56);
+
+  const logsHTML = state.logs.map((l, i) =>
+    `<div class="log-line" style="animation-delay:${i * 0.05}s">
+      <span class="log-ts">[${l.ts}]</span> <span class="log-${l.type}">${l.msg}</span>
+    </div>`
+  ).join('');
+
+  const hasResults = state.results && (state.results.functions.length + state.results.classes.length + state.results.exports.length + state.results.endpoints.length) > 0;
+
+  const itemsHTML = hasResults ? state.results.functions.map(fn =>
+    `<div class="extracted-item">
+      <span class="item-tag tag-function">fn</span>
+      <span class="item-name">${fn.name}</span>
+      ${fn.params.length ? `<span style="font-size:10px;color:var(--text-dim)">(${fn.params.join(', ')})</span>` : ''}
+      <div class="item-desc">${fn.description}</div>
+      ${fn.example ? `<div class="item-example">${escapeHTML(fn.example)}</div>` : ''}
+    </div>`
+  ).join('') + state.results.classes.map(c =>
+    `<div class="extracted-item">
+      <span class="item-tag tag-class">class</span>
+      <span class="item-name">${c.name}</span>
+      <div class="item-desc">${c.description}</div>
+    </div>`
+  ).join('') + state.results.endpoints.map(e =>
+    `<div class="extracted-item">
+      <span class="item-tag tag-endpoint">${e.method || 'route'}</span>
+      <span class="item-name">${e.path}</span>
+    </div>`
+  ).join('') + state.results.exports.map(e =>
+    `<div class="extracted-item">
+      <span class="item-tag tag-export">export</span>
+      <span class="item-name">${e.name}</span>
+    </div>`
+  ).join('') : '';
+
+  const schemaData = state.schema ?
+    (state.format === 'manifest' ? state.schema.manifest :
+     state.format === 'openai' ? state.schema.openai :
+     state.schema.anthropic) : null;
+
+  const statsHTML = state.results ? `
+    <div class="stats-bar reveal">
+      <div class="stat">
+        <span class="stat-value">${state.results.functions.length}</span>
+        <span class="stat-label">Functions</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <span class="stat-value">${state.results.classes.length}</span>
+        <span class="stat-label">Classes</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <span class="stat-value">${state.results.exports.length}</span>
+        <span class="stat-label">Exports</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <span class="stat-value">${state.results.endpoints.length}</span>
+        <span class="stat-label">Endpoints</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <span class="stat-value">${state.results.metadata.lines.toLocaleString()}</span>
+        <span class="stat-label">Lines</span>
+      </div>
+    </div>` : '';
+
+  app.innerHTML = `
+    <!-- HEADER -->
+    <div class="header">
+      <div class="librarian-avatar">${librarianSVG}</div>
+      <div class="header-text">
+        <h1>LangExtract-Live</h1>
+        <div class="subtitle">Agent-Ready Ingestion Engine</div>
+      </div>
+      <div class="status-badge">
+        <div class="status-dot"></div>
+        Engine Online
+      </div>
+    </div>
+
+    <!-- URL INPUT -->
+    <div class="input-section">
+      <div class="input-label">Target URL</div>
+      <div class="input-row">
+        <input
+          class="url-input"
+          type="text"
+          placeholder="https://raw.githubusercontent.com/user/repo/main/src/module.ts"
+          value="${escapeHTML(state.url)}"
+          id="urlInput"
+          ${state.loading ? 'disabled' : ''}
+        />
+        <button class="extract-btn" id="extractBtn" ${state.loading ? 'disabled' : ''}>
+          ${state.loading ? '<span class="loading-spinner"></span> Extracting' : '⚡ Extract'}
+        </button>
+      </div>
+      <div class="helper-text">
+        Paste a <code>raw.githubusercontent.com</code> URL or any raw text file endpoint. GitHub blob URLs auto-convert.
+      </div>
+    </div>
+
+    <!-- PROGRESS -->
+    <div class="progress-container ${state.loading || state.progress > 0 ? 'active' : ''}">
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" style="width:${state.progress}%"></div>
+      </div>
+      <div class="progress-label">
+        <span class="progress-phase">${state.phase}</span>
+        <span>${state.progress}%</span>
+      </div>
+    </div>
+
+    <!-- LOG CONSOLE -->
+    <div class="log-console ${state.logs.length > 0 ? 'active' : ''}">
+      <div class="log-header">
+        <div class="log-header-dot r"></div>
+        <div class="log-header-dot y"></div>
+        <div class="log-header-dot g"></div>
+        <span class="log-header-title">Extraction Log</span>
+      </div>
+      <div class="log-body">${logsHTML}</div>
+    </div>
+
+    <!-- STATS -->
+    ${statsHTML}
+
+    <!-- RESULTS -->
+    ${hasResults || schemaData ? `
+    <div class="results-grid">
+      <!-- Extracted Items -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">◈ Extracted Items</span>
+          <span class="panel-count">${state.results ? state.results.functions.length + state.results.classes.length + state.results.exports.length + state.results.endpoints.length : 0}</span>
+        </div>
+        <div class="panel-body">
+          ${itemsHTML || '<div class="empty-state"><div class="empty-state-text">No items extracted</div></div>'}
+        </div>
+      </div>
+
+      <!-- Schema Output -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">◈ Schema Output</span>
+          <button class="copy-btn copy-schema-btn" onclick="copySchema()">Copy as Tool-Definition</button>
+        </div>
+        <div class="panel-body">
+          <div class="format-tabs">
+            <button class="format-tab ${state.format === 'manifest' ? 'active' : ''}" data-format="manifest">Manifest</button>
+            <button class="format-tab ${state.format === 'openai' ? 'active' : ''}" data-format="openai">OpenAI</button>
+            <button class="format-tab ${state.format === 'anthropic' ? 'active' : ''}" data-format="anthropic">Anthropic</button>
+          </div>
+          <div class="json-output">${schemaData ? highlightJSON(schemaData) : ''}</div>
+        </div>
+      </div>
+    </div>
+    ` : `
+    ${!state.loading && state.logs.length === 0 ? `
+    <div class="empty-state" style="padding:80px 20px">
+      <div class="pixel-art-container">${createLibrarianSVG(96)}</div>
+      <div class="empty-state-text" style="margin-top:16px">
+        <strong>The AI Librarian awaits.</strong><br><br>
+        Paste a GitHub file URL above to extract functions, classes,<br>
+        endpoints, and generate an agent-ready tool manifest.<br><br>
+        Supports <strong>JavaScript</strong>, <strong>TypeScript</strong>, <strong>Python</strong>, and <strong>Markdown</strong> docs.
+      </div>
+    </div>` : ''}
+    `}
+
+    ${state.error && !hasResults ? `
+    <div style="text-align:center;padding:30px;color:var(--magenta);font-size:12px">
+      ⚠ ${escapeHTML(state.error)}<br>
+      <span style="color:var(--text-dim);font-size:10px;margin-top:8px;display:inline-block">
+        Tip: Make sure the URL points to a raw text file. GitHub blob URLs are auto-converted.
+      </span>
+    </div>` : ''}
+
+    <!-- FOOTER -->
+    <div class="footer">
+      <span>LangExtract-Live</span> v1.0 — Ingestion Engine — Built for the Agent Economy
+    </div>
+  `;
+
+  // Re-attach event listeners
+  document.getElementById('urlInput')?.addEventListener('input', e => { state.url = e.target.value; });
+  document.getElementById('urlInput')?.addEventListener('keydown', e => { if (e.key === 'Enter' && !state.loading) handleExtract(); });
+  document.getElementById('extractBtn')?.addEventListener('click', handleExtract);
+
+  document.querySelectorAll('.format-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      state.format = tab.dataset.format;
+      render();
+    });
+  });
+}
+
+function escapeHTML(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Initial render
+render();
+</script>
+</body>
+</html>
